@@ -1,0 +1,185 @@
+Merlin.cpp
+#include <stdlib.h>
+#include <stdio.h>
+#include "glew.h"
+#include "glut.h"
+#include "glfw3.h"
+#include "Graphics.h"
+#include "Physics.h"
+#include "Level.h"
+#include "InputManager.h"
+#include "lua.hpp"
+#include "Camera.h"
+#include "CharacterController.h"
+#include "LUAVector3.h"
+#include <LUAVector3.cpp>
+
+
+using namespace Merlin;
+
+#define MELIN_VERSION "1.0"
+
+Merlin::Level* level;
+
+lua_State* L;
+
+void InitialiseLUA() {
+	L = luaL_newstate();
+	if (L == NULL) {
+		printf("FAILED... Unable to allocate memory for LUA Scripting. \n");
+	}
+	else {
+		printf("PASS... LUA Scripting state created. \n");
+	}
+
+	luaL_openlibs(L);
+	Graphics::Register(L);
+	GameObject::Register(L);
+	InputManager::Register(L);
+
+//adding the character controller and the Lua vector to the register.
+	CharacterController::Register(L);
+	LUAVector3::Register(L);
+
+	Camera::Register(L);
+	Transform::Register(L);
+
+
+}
+
+
+void InitialiseGLEW() {
+	if (glewInit() != GLEW_OK) {
+		printf("FAILED... Unable to initialise GLEW. \n");
+	}
+	else {
+		printf("PASS... GLEW Initialised. \n");
+	}
+}
+
+void Initialise(GLFWwindow* win) {
+	
+	InitialiseGLEW();
+	InitialiseLUA();
+
+
+	glEnable(GL_DEPTH_TEST);
+	glEnable(GL_CULL_FACE);
+
+	glEnable(GL_LINE_SMOOTH);
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+	// Create the level
+	level = new Merlin::Level("Demo Scene", L);
+	// Load the assets
+	
+	level->Initialise();
+
+	InputManager::Initialise(win);
+	level->physics->debugDrawer->Initialise();
+
+}
+
+void InitialiseGLFW() {
+	int major, minor, rev;
+	glfwGetVersion(&major, &minor, &rev);
+	printf("GLFW version %i:%i:%i \n", major, minor, rev);
+	if (glfwInit() == GL_TRUE) {
+		printf("PASS... GLFW Initialised. \n");
+	}
+	else {
+		printf("FAILED.. GLFW Initialisation failed. \n");
+		exit(EXIT_FAILURE);
+	}
+}
+void About() {
+	printf("Merlin Engine Version %s \n", MELIN_VERSION);
+}
+
+void OnError(int error, const char* description) {
+	fputs(description, stderr);
+}
+
+
+
+
+// these will contain logic to execute the physic calculations and rendering objects within the scene.
+void DoRender() {
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+	glColor3f(1.0, 1.0, 1.0);
+	//glMatrixMode(GL_MODELVIEW);
+	//glLoadIdentity();
+	level->Update();
+	//Cube();
+
+}
+
+void DoPhysics(double deltaTime) {
+	level->physics->UpdatePhysics(deltaTime);
+}
+
+void GameLoop(GLFWwindow* window) {
+
+	double dt = Physics::step;
+	double previous = glfwGetTime();
+	double lag = 0.0;
+
+	while (!glfwWindowShouldClose(window)) {
+		// this grabs the windows dimensions and sets the view port accordingly.
+		int width, height;
+		glfwGetFramebufferSize(window, &width, &height);
+		glViewport(0, 0, width, height);
+
+		double current = glfwGetTime();			           
+		double elapsed = current - previous;
+		previous = current;
+		lag += elapsed;
+
+		while (lag >= dt) {
+			DoPhysics(dt);
+			lag -= dt;
+		}
+
+		DoRender();
+
+		level->physics->UpdatePhysicsDebug();
+		level->physics->debugDrawer->Draw();
+
+		glfwSwapBuffers(window);
+		glfwPollEvents();
+		InputManager::RecordLastCursorPosition();
+	}
+}
+
+
+int main() 
+{
+	glfwSetErrorCallback(OnError);
+	About();
+	InitialiseGLFW();
+
+	GLFWwindow* window = glfwCreateWindow(Graphics::DEFAULT_WINDOW_WIDTH, Graphics::DEFAULT_WINDOW_HEIGHT, "Merlin Engine", NULL, NULL);
+	if (!window) {
+		glfwTerminate();
+		exit(EXIT_FAILURE);
+	}
+
+
+	const GLFWvidmode* vidmode = glfwGetVideoMode(glfwGetPrimaryMonitor());
+
+	// sets the window to the middle.
+	glfwSetWindowPos(window, (vidmode->width - Graphics::DEFAULT_WINDOW_WIDTH) / 2, (vidmode->height - Graphics::DEFAULT_WINDOW_HEIGHT) / 2);
+
+	glfwMakeContextCurrent(window);
+
+	glfwSwapInterval(1);
+
+	Initialise(window);
+
+	GameLoop(window);
+	glfwDestroyWindow(window);
+	glfwTerminate();
+	exit(EXIT_SUCCESS);
+
+}
